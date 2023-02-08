@@ -1,0 +1,281 @@
+---
+title: "Jobs Gender Exploration"
+author: "Team Algoritma"
+date: "`r format(Sys.Date(), '%e %B %Y')`"
+output: 
+  html_document:
+    df_print: paged
+    toc: true
+    toc_depth: 2
+    toc_float: true
+    highlight: kate
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, # code akan ditampilkan saat kita knit
+                      warning = FALSE, # kalau ada warning tidak akan ditampilkan
+                      message = FALSE) # kl ada message tidak akan ditampilkan
+```
+
+# Import Library
+
+Pada eksplorasi kali ini, akan digunakan satu package bernama [tidyverse](https://www.tidyverse.org/), yang mengusung konsep tidy dalam transformasi data. Adapun di dalam `tidyverse`, terdapat package-package yang umum digunakan untuk transformasi data, yakni `ggplot2`, `dplyr`, `tidyr`, `readr`, `purrr`, `tibble`, `stringr`, dan `forcats`.
+
+```{r}
+library(tidyverse) # untuk transformasi data
+library(plotly) # untuk membuat plot menjadi interaktif
+library(glue) # untuk custom informasi saat plot interaktif
+library(scales) # untuk custom keterangan axis atau lainnya
+library(ggpubr) # untuk export plot
+```
+
+# Import data
+
+Kali ini, kita akan menggunakan dataset dari [#tidytuesday](https://github.com/rfordatascience/tidytuesday/tree/master/data/2019/2019-03-05), yakni "Women in the workplace" dari biro sensus dan biro tenaga kerja.
+
+```{r}
+workers <- read_csv("jobs_gender.csv")
+glimpse(workers)
+```
+
+Berikut merupakan deskripsi dari variabel pada dataset `jobs_gender.csv`:   
+- `year`	Year   
+- `occupation`	Specific job/career   
+- `major_category`	Broad category of occupation   
+- `minor_category`	Fine category of occupation    
+- `total_workers`	Total estimated full-time workers > 16 years old   
+- `workers_male`	Estimated MALE full-time workers > 16 years old   
+- `workers_female`	Estimated FEMALE full-time workers > 16 years old   
+- `percent_female`	The percent of females for specific occupation    
+- `total_earnings`	Total estimated median earnings for full-time workers > 16 years old 
+- `total_earnings_male`	Estimated MALE median earnings for full-time workers > 16 years old
+- `total_earnings_female`	Estimated FEMALE median earnings for full-time workers > 16 years old
+- `wage_percent_of_male`	Female wages as percent of male wages - NA for occupations with small sample size   
+
+# Business Questions
+
+1. Dari dataset yang ada, kita ingin melihat berapa gap earnings antara male dan female untuk tiap major kategori di tahun 2016, terutama `Computer, Engineering, and Science`
+2. Kita ingin mengetahui perbandingan jumlah pekerja antara male dan female (workers male/ female) untuk tiap major category
+3. Kita ingin mengetahui sebaran data antara total earnings male dan female
+
+# Tidy Data
+
+## Cek NA- Not Available (Missing Values)
+```{r}
+workers %>% 
+  is.na() %>% 
+  colSums()
+
+```
+## Handling NA
+
+Cara menghandle NA ada beberapa cara:   
+- Dibuang baris-baris yang mengandung NA kalau jumlahnya < 5% data   
+- Jumlah NA > 5%, imputation (NA diisi oleh suatu nilai)  ketika datanya numerik, diisi dengan mean/median, kalau kategorikal diisi dengan modus
+- Membuang variabel/kolom yang banyak mengandung NA  
+
+### Drop NA 
+
+Akan dibuang NA pada kolom total_earnings_female dan total_earnings_male
+
+```{r}
+workers %>% 
+  drop_na(total_earnings_male, total_earnings_female)
+```
+
+Cek lagi NA-nya
+```{r}
+workers %>% 
+  drop_na(total_earnings_male, total_earnings_female) %>% 
+  is.na() %>% 
+  colSums()
+```
+```{r}
+workers_clean <- workers %>% 
+  drop_na(total_earnings_male, total_earnings_female) %>% 
+  select(-wage_percent_of_male) 
+```
+
+## Transformation Data 1
+
+Dari dataset yang ada, kita akan melihat *berapa gap earnings antara male dan female untuk tiap major kategori di tahun 2016*. Misal kita ingin menghighlight gap earnings di major `Computer, Engineering, and Science`.
+
+**Workflow:**
+
+- filter untuk 2016
+- buat kolom baru yakni gap earnings = total earnings male - total earnings female
+- lakukan agregasi terhadap major category
+
+Pertama kita akan melakukan transformasi data, kemudian menyimpan ke dalam object `data_agg1`
+
+```{r}
+#code here
+data_agg1 <- workers_clean %>%
+  filter(year == 2016) %>% 
+  mutate(gap_earnings = total_earnings_male-total_earnings_female) %>% 
+  group_by(major_category) %>%
+  summarise(mean_gap = mean(gap_earnings),
+            median_gap = median(gap_earnings))
+```
+
+## Visualisasi 1
+
+Kita panggil kembali data `data_agg1` yang telah dibuat sebelumnya.
+
+```{r}
+data_agg1 
+```
+
+Plot 1 : Membuat plot dan namakan plot_ranking
+```{r}
+plot_ranking <- data_agg1 %>% 
+  ggplot(aes(x = mean_gap, 
+             y = reorder(major_category, mean_gap),
+             text = glue("{major_category}
+                         Gap Earnings: {mean_gap}
+                         median gap: {median_gap}"))) +
+  geom_col(fill = "dodgerblue4") +
+  geom_col(data = data_agg1 %>% filter(major_category == "Computer, Engineering, and Science"), fill = "firebrick") +
+  labs(title = "Gap earnings on male and female 2016",
+       x = NULL,
+       y = NULL) +
+  scale_y_discrete(labels = wrap_format(30)) +
+  scale_x_continuous(labels = dollar_format(prefix = "$"))
+
+plot_ranking
+```
+
+Additional : Membuat tema algoritma untuk branding visualization. 
+```{r}
+theme_algoritma <- theme(legend.key = element_rect(fill="black"),
+           legend.background = element_rect(color="white", fill="#263238"),
+           plot.subtitle = element_text(size=6, color="white"),
+           panel.background = element_rect(fill="#dddddd"),
+           panel.border = element_rect(fill=NA),
+           panel.grid.minor.x = element_blank(),
+           panel.grid.major.x = element_blank(),
+           panel.grid.major.y = element_line(color="darkgrey", linetype=2),
+           panel.grid.minor.y = element_blank(),
+           plot.background = element_rect(fill="#263238"),
+           text = element_text(color="white"),
+           axis.text = element_text(color="white"))
+
+plot_ranking <- plot_ranking + theme_algoritma
+plot_ranking
+```
+
+### Interactive Visualization
+
+```{r}
+ggplotly(plot_ranking, tooltip = "text")
+
+```
+
+## Transformasi Data 2
+
+Kita ingin mengetahui perbandingan jumlah pekerja antara male dan female (workers male/ workers female) untuk tiap major category. Simpan hasil transformasi data ke data_agg2.
+```{r}
+data_agg2 <- workers %>% 
+  pivot_longer(cols = c(workers_male, workers_female), 
+               names_to = "var", 
+               values_to = "value") %>% 
+  group_by(major_category, var) %>% 
+  summarise(rerata_workers = mean(value)) %>% 
+  mutate(gender = ifelse(var == "workers_female", "Female", "Male")) %>%
+  #group_by(major_category) %>% 
+  mutate(proportion = round(rerata_workers/sum(rerata_workers),2)*100)
+data_agg2         
+```
+
+## Visualisasi 2
+
+Simpan object plot ke dalam object `plot_composition`
+```{r}
+plot_composition <- data_agg2 %>% 
+  ggplot(aes(x = rerata_workers, 
+             y = major_category,
+             text = glue("Gender: {gender}
+                         Mean of Workers: {proportion}%"))) + 
+  geom_col(aes(fill = var), position = "fill") +
+  geom_vline(xintercept = 0.5, col = "white", lty = 2, lwd = 1.5) + #membuat vertical line
+  labs(title = "Composition of Wokers Male and Female",
+       x = NULL,
+       y = NULL) +
+  scale_fill_manual(values = c("black", "firebrick")) +
+  scale_y_discrete(labels = wrap_format(30)) + # wrap tulisan agar tidak terlalu panjang
+  scale_x_continuous(labels = percent_format(accuracy = 1)) +
+  theme_algoritma + #harus dirun chunk atas untuk custom theme yg disediakan
+  theme(legend.position = "none") #untuk hapus legend
+
+plot_composition
+```
+
+Note:
+- lty = line type untuk mengubah mnjd garis putus2
+- lwd = line width
+- xintercept = garis berpotongan di nilai berapa sumbu x
+- scale_y_discrete karena tipe data dari sumbu y adalah kategorikal, kalau numerik menjadi continous
+
+### Interactive Visualization
+```{r}
+plot_comporition_inter <- ggplotly(plot_composition, tooltip = "text")
+```
+
+## Visualisasi 3
+Kita ingin mengetahui sebaran data antara total earnings male dan female. Simpan object plotnya ke dalam `plot_dist`
+
+```{r}
+plot_dist <- workers_clean %>% 
+  ggplot(aes(total_earnings_male, 
+             total_earnings_female)) +
+  geom_jitter(aes(col = major_category ,
+             text = glue("{str_to_upper(major_category)}
+                         Earnings Male: {total_earnings_male}
+                         Earnings Female: {total_earnings_female}")
+             )) +
+  geom_smooth() +
+  labs(y = "Total Earnings Female",
+       x = "Total Earnings Male",
+       title = "Distribution of Plot Earnings") +
+  scale_color_brewer(palette = "Set3") +
+  theme_algoritma +
+  theme(legend.position = "none")
+
+
+```
+
+## Interactive Visualization
+
+```{r}
+plot_dist_inter <- ggplotly(plot_dist, tooltip = "text")
+```
+
+# Communicate
+
+## Static Plot
+```{r}
+plot_composition
+```
+
+mengatur urutan plot dengan `ggarrange()`
+
+```{r}
+plot_arrange <- ggarrange(plot_ranking, plot_composition, nrow = 2)
+```
+
+Exporting plot ke dalam format .png, .jpg, atau .pdf
+```{r}
+ggexport(plot_arrange, filename = "plot_arrange.png")
+```
+
+## Interactive plot
+
+### Subplot
+
+Mirip dengan `ggarrange()`
+```{r}
+sub <- subplot(plot_comporition_inter, plot_dist_inter, nrows = 2)
+sub
+```
+
